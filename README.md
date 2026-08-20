@@ -258,10 +258,11 @@ IPS = [
 
 The proxy will test every address and select the fastest one that returns a valid RakNet Offline Pong.
 
-## Important
+## Acknowledgments
 
-This project is a **UDP relay**, not a Minecraft Bedrock server.
+- **BedrockConnect**: Special thanks to [Pugmatt](https://github.com/Pugmatt/BedrockConnect) and the BedrockConnect project.
+- **PieRakNet**: Special thanks to [PieMC-Dev](https://github.com/PieMC-Dev/PieRakNet) used during testing and learing the protocol.
 
 ## License
 
-Use, modify, and distribute this code according to the license you choose for your project.
+This project is licensed under the [MIT License](LICENSE). See the `LICENSE` file for details.
