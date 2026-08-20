@@ -1,43 +1,97 @@
 import socket
 import struct
 import select
+import time
 
-HOST = "0.0.0.0"
+# Change the values according to you game 
+PROTOCOL_VERSION = 12168  # Settings > General (At the bottom)
+VERSION = "1.26.44" # Mainmenu (bottom right)
 PORT = 19132
-
-REMOTE_IP = "104.238.130.180"
 REMOTE_PORT = 19132
 
-BUFFER_SIZE = 65535
+IPS = [
+    "104.238.130.180",
+    "134.255.231.119",
+    "185.169.180.190",
+    "5.161.83.73",
+    "213.171.211.142",
+    "217.160.58.93"
+]
 
-MAGIC = bytes.fromhex("00 ff ff 00 fe fe fe fe fd fd fd fd 12 34 56 78")
+MAGIC = bytes.fromhex(
+    "00 ff ff 00 fe fe fe fe fd fd fd fd 12 34 56 78"
+)
 
 SERVER_GUID = 0x7165B97802C172E1
 
 SERVER_NAME = (
-    "MCPE;"
-    "Python Proxy;"
-    "2168;"
-    "1.26.44;"
-    "0;"
-    "10;"
-    "0;"
-    "Python World;"
-    "survival;"
-    "1;"
-    "19132;"
-    "19132"
-).encode("utf-8")
+    f"MCPE;crafted by brostos;{PROTOCOL_VERSION};{VERSION};0;10;0;pyBedrockConnect;"
+    "survival;1;19132;19132"
+).encode()
+
+def build_ping():
+    timestamp = int(time.time() * 1000)
+    return (
+        b"\x01"
+        + struct.pack(">Q", timestamp)
+        + MAGIC
+        + struct.pack(">Q", SERVER_GUID)
+    )
 
 
-def hex_dump(data):
-    return data.hex(" ")
+def find_best_server():
+    best_ip = None
+    best_latency = float("inf")
+    payload = build_ping()
+
+    print("Finding fastest BedrockConnect server...")
+
+    for ip in IPS:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(1.5)
+
+        start = time.perf_counter()
+
+        try:
+            sock.sendto(payload, (ip, REMOTE_PORT))
+            data, _ = sock.recvfrom(2048)
+
+            latency = (time.perf_counter() - start) * 1000
+
+            if data and data[0] == 0x1C:
+                print(f"-> {ip:<15} {latency:7.2f} ms")
+
+                if latency < best_latency:
+                    best_latency = latency
+                    best_ip = ip
+            else:
+                print(f"-> {ip:<15} Invalid response")
+
+        except socket.timeout:
+            print(f"-> {ip:<15} Timeout")
+
+        except OSError:
+            print(f"-> {ip:<15} Unreachable")
+
+        finally:
+            sock.close()
+
+    if best_ip is None:
+        print("No reachable Bedrock server found.")
+        return None
+
+    print(
+        f"Selected {best_ip} "
+        f"({best_latency:.2f} ms)"
+    )
+
+    return best_ip
 
 
-def build_offline_pong(client_timestamp):
+def build_pong(timestamp):
     return (
         b"\x1c"
-        + struct.pack(">Q", client_timestamp)
+        + struct.pack(">Q", timestamp)
         + struct.pack(">Q", SERVER_GUID)
         + MAGIC
         + struct.pack(">H", len(SERVER_NAME))
@@ -45,220 +99,109 @@ def build_offline_pong(client_timestamp):
     )
 
 
-def print_packet(title, data, addr):
-    packet_id = data[0] if data else 0
-
-    print()
-    print("-" * 70)
-    print(title)
-    print(f"From:   {addr}")
-    print(f"Length: {len(data)} bytes")
-    print(f"ID:     0x{packet_id:02X}")
-    print(f"Data:   {hex_dump(data)}")
-    print("-" * 70)
-
-
 def main():
+    remote_ip = find_best_server()
 
-    # ---------------------------------------------------------
-    # LAN socket
-    # ---------------------------------------------------------
+    if remote_ip is None:
+        return
 
-    lan_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    lan = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    lan.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    lan.bind(("0.0.0.0", PORT))
 
-    lan_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    remote = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    remote.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    remote.bind(("0.0.0.0", 0))
 
-    lan_socket.bind((HOST, PORT))
+    server = (remote_ip, REMOTE_PORT)
 
-    # ---------------------------------------------------------
-    # Remote server socket
-    # ---------------------------------------------------------
+    client = None
+    connected = False
+    online = False
+    online_activity = None
 
-    remote_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    print(f"Proxy started on {"0.0.0.0"}:{PORT}")
+    print(f"Forwarding to {remote_ip}:{REMOTE_PORT}")
 
-    remote_server = (REMOTE_IP, REMOTE_PORT)
-
-    client_addr = None
-
-    print("=" * 70)
-    print("RakNet LAN Proxy")
-    print("=" * 70)
-    print(f"LAN listening:   {HOST}:{PORT}")
-    print(f"Remote server:   {REMOTE_IP}:{REMOTE_PORT}")
-    print(f"Server GUID:     {SERVER_GUID}")
-    print(f"Server name:     {SERVER_NAME.decode()}")
-    print("=" * 70)
-    print()
-    print("[READY] Waiting for LAN client...")
-    print()
-
-    while True:
-
-        try:
-
-            readable, _, _ = select.select([lan_socket, remote_socket], [], [])
-
-        except KeyboardInterrupt:
-            print("\nStopping...")
-            break
-
-        except Exception as e:
-            print(f"[ERROR] select(): {e}")
-            continue
-
-        for sock in readable:
-
-            # =================================================
-            # LAN CLIENT -> PROXY
-            # =================================================
-
-            if sock is lan_socket:
-
-                try:
-                    data, addr = lan_socket.recvfrom(BUFFER_SIZE)
-
-                except Exception as e:
-                    print(f"[ERROR] LAN recvfrom(): {e}")
-                    continue
-
-                print_packet("[LAN -> PROXY]", data, addr)
-
-                if not data:
-                    print("[IGNORED] Empty packet")
-                    continue
-
-                packet_id = data[0]
-
-                # -------------------------------------------------
-                # Offline Ping
-                # -------------------------------------------------
-
-                if packet_id == 0x01:
-
-                    print("[RAKNET] Offline Ping detected")
-
-                    if len(data) < 33:
-                        print("[WARNING] Offline Ping is too short")
-                        continue
-
-                    client_timestamp = struct.unpack(">Q", data[1:9])[0]
-
-                    received_magic = data[9:25]
-
-                    client_guid = struct.unpack(">Q", data[25:33])[0]
-
-                    print(f"Client timestamp: {client_timestamp}")
-
-                    print(f"Client GUID:      {client_guid}")
-
-                    print(f"Magic:            " f"{hex_dump(received_magic)}")
-
-                    if received_magic != MAGIC:
-
-                        print("[WARNING] Invalid RakNet magic")
-
-                        continue
-
-                    print("[RAKNET] Magic is valid")
-
-                    pong = build_offline_pong(client_timestamp)
-
-                    print()
-                    print("[SENDING OFFLINE PONG]")
-                    print(f"To: {addr}")
-                    print(f"Length: {len(pong)} bytes")
-                    print(f"Data: {hex_dump(pong)}")
-
-                    try:
-
-                        sent = lan_socket.sendto(pong, addr)
-
-                        print(f"[SENT] {sent} bytes")
-
-                    except Exception as e:
-
-                        print(f"[ERROR] Pong sendto(): {e}")
-
-                    print("[SUCCESS] Offline Pong sent.")
-
-                    continue
-
-                # -------------------------------------------------
-                # Everything else
-                # -------------------------------------------------
-
-                client_addr = addr
-
-                print(f"[CLIENT] Active client: {client_addr}")
-
-                print(
-                    f"[RELAY] Forwarding "
-                    f"0x{packet_id:02X} "
-                    f"to {REMOTE_IP}:{REMOTE_PORT}"
+    try:
+        while True:
+            if online:
+                remaining = 5 - (
+                    time.monotonic() - online_activity
                 )
 
-                try:
+                if remaining <= 0:
+                    break
+            else:
+                remaining = None
 
-                    sent = remote_socket.sendto(data, remote_server)
+            readable, _, _ = select.select(
+                [lan, remote],
+                [],
+                [],
+                remaining
+            )
 
-                    print(f"[RELAY] Sent {sent} bytes " f"to remote server")
+            if not readable:
+                break
 
-                except Exception as e:
+            for sock in readable:
+                if sock is lan:
+                    data, addr = lan.recvfrom(65535)
 
-                    print(f"[ERROR] Remote sendto(): {e}")
+                    if not data:
+                        continue
 
-            # =================================================
-            # REMOTE SERVER -> PROXY -> LAN CLIENT
-            # =================================================
+                    if data[0] == 0x01:
+                        if len(data) < 33 or data[9:25] != MAGIC:
+                            continue
 
-            elif sock is remote_socket:
+                        timestamp = struct.unpack(
+                            ">Q",
+                            data[1:9]
+                        )[0]
 
-                try:
+                        lan.sendto(
+                            build_pong(timestamp),
+                            addr
+                        )
+                        continue
 
-                    data, addr = remote_socket.recvfrom(BUFFER_SIZE)
+                    client = addr
+                    remote.sendto(data, server)
 
-                except Exception as e:
+                    if not online:
+                        online = True
+                        online_activity = time.monotonic()
 
-                    print(f"[ERROR] Remote recvfrom(): {e}")
+                elif sock is remote:
+                    data, _ = remote.recvfrom(65535)
+                    online_activity = time.monotonic()
 
-                    continue
+                    if client is None:
+                        continue
 
-                print_packet("[SERVER -> PROXY]", data, addr)
+                    lan.sendto(data, client)
 
-                if client_addr is None:
+                    if not connected:
+                        connected = True
+                        print(
+                            f"Player connected to BedrockConnect"
+                            f"-> {remote_ip}:{REMOTE_PORT}"
+                        )
 
-                    print(
-                        "[WARNING] No LAN client is associated "
-                        "with this server response"
-                    )
+    except (OSError, KeyboardInterrupt):
+        pass
 
-                    continue
+    finally:
+        lan.close()
+        remote.close()
 
-                packet_id = data[0] if data else 0
-
-                print(
-                    f"[RELAY] Forwarding "
-                    f"0x{packet_id:02X} "
-                    f"to LAN client {client_addr}"
-                )
-
-                try:
-
-                    sent = lan_socket.sendto(data, client_addr)
-
-                    print(f"[RELAY] Sent {sent} bytes " f"to LAN client")
-
-                except Exception as e:
-
-                    print(f"[ERROR] LAN sendto(): {e}")
-
-    lan_socket.close()
-    remote_socket.close()
-
-    print("[STOPPED]")
+        if connected:
+            print("Player successfully transported through proxy")
+        else:
+            print("Proxy stopped.")
 
 
 if __name__ == "__main__":
     main()
-
-
