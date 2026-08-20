@@ -260,8 +260,9 @@ The proxy will test every address and select the fastest one that returns a vali
 
 ## Acknowledgments
 
-- **BedrockConnect**: Special thanks to [Pugmatt](https://github.com/Pugmatt/BedrockConnect) server provider.
-- **PieRakNet**: Special thanks to [PieMC-Dev](https://github.com/PieMC-Dev/PieRakNet) used during testing and learing the protocol.
+- [**BedrockConnect**](https://github.com/Pugmatt/BedrockConnect) : Pugmatt BedrockConnect server provider.
+- [**PieRakNet**](https://github.com/PieMC-Dev/PieRakNet) : Testing and learning the RAKNET protocol.
+
 
 ## License
 
