@@ -4,7 +4,11 @@ A lightweight Python UDP relay for Minecraft BedrockConnect servers.
 
 `pyBedrockConnect` appears as a LAN server, responds to Bedrock/RakNet discovery pings, automatically tests a list of remote BedrockConnect servers, selects the server with the lowest UDP response latency, and then relays traffic between the Bedrock client and the selected server.
 
-The entire tool runs from a single file:
+
+
+https://github.com/user-attachments/assets/da39d306-2c7a-4eec-a654-def29bd88173
+
+
 
 ## Features
 * You can easily modify the bedrock version and protocol version for developers and beta testers
