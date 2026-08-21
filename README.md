@@ -20,15 +20,8 @@ https://github.com/user-attachments/assets/da39d306-2c7a-4eec-a654-def29bd88173
 * Automatically stops after 5 seconds without traffic from the remote server
 * Designed to be easy to run on mobile phones and even microcontrollers 
 
-## Requirements
-
-Python 3 (No `pip install` is required.)
-
-
-
-
 ## Running
-Copy the code below and run its that simple.
+Copy the code below and run it on free python apps like coding python,pythonista ...
 
 - Android **Coding Python** (Used it for testing no ads) - [Coding Python on Google Play](https://play.google.com/store/apps/details?id=com.kvassyu.coding.py)
 
